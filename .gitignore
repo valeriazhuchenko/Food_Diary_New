@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.docx_extract/
+.env
+firebase-service-account.json
+*.log
+.DS_Store

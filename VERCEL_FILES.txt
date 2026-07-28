@@ -1,0 +1,20 @@
+# Список файлов, которые ОБЯЗАТЕЛЬНО должны быть на GitHub для сборки Vercel.
+# Откройте репозиторий на github.com и проверьте, что эти пути существуют.
+
+vite.config.js
+vercel.json
+package.json
+api/index.js
+app/client/index.html
+app/client/main.js
+app/client/App.vue
+app/client/api.js
+app/client/portionLabels.js
+app/client/styles.css
+app/client/vite.config.js
+app/client/components/MealLogger.vue
+app/client/components/NutritionGuide.vue
+app/client/components/CommunityChallenges.vue
+app/server/createApp.js
+app/server/routes.js
+app/server/controller.js

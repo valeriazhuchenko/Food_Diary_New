@@ -9,8 +9,8 @@ router.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'dnevnik-pitaniya' });
 });
 
-router.post('/telegram/webhook', (req, res) => {
-  processWebhookUpdate(req.body);
+router.post('/telegram/webhook', async (req, res) => {
+  await processWebhookUpdate(req.body);
   res.sendStatus(200);
 });
 

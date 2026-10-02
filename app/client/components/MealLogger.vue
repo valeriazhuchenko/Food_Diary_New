@@ -107,9 +107,30 @@ function initPortions() {
   form.value.portions = p;
 }
 
+const PORTION_STEP = 0.5;
+const PORTION_MAX = 10;
+
+function parsePortion(value, max = PORTION_MAX) {
+  const n = Number(String(value).replace(',', '.'));
+  if (Number.isNaN(n) || n < 0) return 0;
+  return Math.min(max, Math.round(n * 10) / 10);
+}
+
 function changePortion(key, delta) {
-  const cur = form.value.portions[key] || 0;
-  form.value.portions[key] = Math.max(0, Math.min(10, cur + delta));
+  const cur = Number(form.value.portions[key]) || 0;
+  form.value.portions[key] = parsePortion(cur + delta);
+}
+
+function setPortion(key, raw) {
+  form.value.portions[key] = parsePortion(raw);
+}
+
+function formatPortion(value) {
+  const n = Number(value);
+  if (Number.isNaN(n)) return '0';
+  return (Math.round(n * 10) / 10).toLocaleString('ru-RU', {
+    maximumFractionDigits: 1,
+  });
 }
 
 async function submit() {
@@ -179,7 +200,7 @@ function formatPortionsLine(meal) {
   if (!meal.portions) return '';
   return Object.entries(meal.portions)
     .filter(([, v]) => v > 0)
-    .map(([k, v]) => `${label(k)}: ${v}`)
+    .map(([k, v]) => `${label(k)}: ${formatPortion(v)}`)
     .join(' · ');
 }
 
@@ -204,7 +225,7 @@ function satietyTitle(v) {
       <div v-for="p in portions" :key="p.id" class="portion-row" :class="p.status">
         <div class="portion-label">
           <span>{{ p.emoji }} {{ p.title }}</span>
-          <span class="portion-count">{{ p.current }}
+          <span class="portion-count">{{ formatPortion(p.current) }}
             <template v-if="p.dailyMin != null && p.dailyMax != null">
               / {{ p.dailyMin }}–{{ p.dailyMax }}
             </template>
@@ -281,13 +302,23 @@ function satietyTitle(v) {
         <div v-for="key in group.keys" :key="key" class="portion-picker">
           <span>{{ label(key) }}</span>
           <div class="stepper">
-            <button type="button" class="step-btn" @click="changePortion(key, -1)">−</button>
-            <span>{{ form.portions[key] || 0 }}</span>
-            <button type="button" class="step-btn" @click="changePortion(key, 1)">+</button>
+            <button type="button" class="step-btn" @click="changePortion(key, -PORTION_STEP)">−</button>
+            <input
+              class="portion-input"
+              type="number"
+              min="0"
+              :max="PORTION_MAX"
+              :step="PORTION_STEP"
+              inputmode="decimal"
+              :value="form.portions[key] || 0"
+              @change="setPortion(key, $event.target.value)"
+            />
+            <button type="button" class="step-btn" @click="changePortion(key, PORTION_STEP)">+</button>
           </div>
         </div>
       </div>
 
+      <p class="hint">Можно указать половину порции: 0,5, 1,5. Кнопки меняют значение на 0,5.</p>
       <p v-if="sweetsRule" class="hint">{{ sweetsRule.description }}</p>
 
       <label>Заметки</label>
@@ -342,8 +373,17 @@ function satietyTitle(v) {
 .portion-group { margin-bottom: 16px; }
 .portion-group h4 { font-size: 14px; margin: 0 0 8px; color: #333; }
 .portion-picker { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
-.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper { display: flex; align-items: center; gap: 8px; }
 .step-btn { width: 32px; height: 32px; border: 1px solid #ddd; border-radius: 8px; background: #fff; cursor: pointer; }
+.portion-input {
+  width: 52px;
+  height: 32px;
+  text-align: center;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  padding: 0 4px;
+}
 .meal-meta { font-size: 13px; color: #555; }
 .meal-portions { font-size: 12px; color: #777; }
 .badge { font-size: 11px; background: #e3f2fd; color: #1565c0; padding: 2px 6px; border-radius: 8px; margin-left: 6px; }

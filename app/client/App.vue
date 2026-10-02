@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import MealLogger from './components/MealLogger.vue';
 import NutritionGuide from './components/NutritionGuide.vue';
 import CommunityChallenges from './components/CommunityChallenges.vue';
@@ -7,8 +7,10 @@ import { getTelegramUser } from './api.js';
 
 const screen = ref('home');
 const user = ref(null);
+const greetingName = computed(() => user.value?.first_name || 'друг');
 
 onMounted(() => {
+  window.Telegram?.WebApp?.ready?.();
   user.value = getTelegramUser();
   const params = new URLSearchParams(window.location.search);
   const deepLink = params.get('screen');
@@ -31,12 +33,9 @@ function goHome() {
     <template v-if="screen === 'home'">
       <header class="hero">
         <h1>Дневник питания</h1>
-        <p v-if="user">
-          Привет, {{ user.first_name }}! Ведите дневник по программе: голод и
+        <p>
+          Привет, {{ greetingName }}! Ведите дневник по программе: голод и
           насыщение (0–4), метод тарелки и ладони — без калорий и весов.
-        </p>
-        <p v-else>
-          Откройте приложение через Telegram-бота, чтобы синхронизировать данные.
         </p>
       </header>
 

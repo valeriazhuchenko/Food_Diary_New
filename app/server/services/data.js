@@ -50,18 +50,61 @@ export const DEFAULT_CHALLENGES = [
   },
 ];
 
+export const USER_TIMEZONE = process.env.USER_TIMEZONE || 'Asia/Yekaterinburg';
+
+export function calendarDateInTz(isoDate, timeZone = USER_TIMEZONE) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(isoDate));
+}
+
 function isToday(isoDate) {
-  const d = new Date(isoDate);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
+  return calendarDateInTz(isoDate) === calendarDateInTz(new Date().toISOString());
+}
+
+export function formatClock(isoDate = new Date().toISOString(), timeZone = USER_TIMEZONE) {
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(isoDate));
+}
+
+export function isoFromClockToday(hour, minute, timeZone = USER_TIMEZONE) {
+  const date = calendarDateInTz(new Date().toISOString(), timeZone);
+  const hh = String(hour).padStart(2, '0');
+  const mm = String(minute).padStart(2, '0');
+  // Asia/Yekaterinburg is UTC+5 without DST; offset is computed from a sample instant.
+  const probe = new Date(`${date}T12:00:00Z`);
+  const localNoon = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(probe);
+  const [lh, lm] = localNoon.split(':').map(Number);
+  const offsetMinutes = 12 * 60 - (lh * 60 + lm);
+  const sign = offsetMinutes <= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMinutes);
+  const offH = String(Math.floor(abs / 60)).padStart(2, '0');
+  const offM = String(abs % 60).padStart(2, '0');
+  return new Date(`${date}T${hh}:${mm}:00${sign}${offH}:${offM}`).toISOString();
 }
 
 export function emptyPortions() {
   return Object.fromEntries(PORTION_KEYS.map((k) => [k, 0]));
+}
+
+const PORTION_MAX = 20;
+
+export function roundPortion(value) {
+  const n = Number(value);
+  if (Number.isNaN(n) || n < 0) return 0;
+  return Math.min(PORTION_MAX, Math.round(n * 10) / 10);
 }
 
 export function normalizePortions(input) {
@@ -69,7 +112,7 @@ export function normalizePortions(input) {
   if (!input || typeof input !== 'object') return base;
   for (const key of PORTION_KEYS) {
     const v = Number(input[key]);
-    if (!Number.isNaN(v) && v >= 0) base[key] = Math.min(20, Math.round(v));
+    if (!Number.isNaN(v) && v >= 0) base[key] = roundPortion(v);
   }
   return base;
 }
@@ -113,7 +156,9 @@ export function sumPortionsFromMeals(meals) {
   const totals = emptyPortions();
   for (const meal of meals) {
     const p = normalizePortions(meal.portions);
-    for (const key of PORTION_KEYS) totals[key] += p[key];
+    for (const key of PORTION_KEYS) {
+      totals[key] = roundPortion(totals[key] + p[key]);
+    }
   }
   return totals;
 }
@@ -226,7 +271,10 @@ export async function createMeal(uid, data) {
     notes: data.notes?.trim() || '',
     scaleVersion: 2,
     programVersion: 1,
-    createdAt: new Date().toISOString(),
+    createdAt:
+      data.createdAt && !Number.isNaN(Date.parse(data.createdAt))
+        ? new Date(data.createdAt).toISOString()
+        : new Date().toISOString(),
   };
 
   const db = getDb();

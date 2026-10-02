@@ -63,6 +63,7 @@ const memoryStore = {
   meals: new Map(),
   challenges: new Map(),
   reminders: new Map(),
+  dialogs: new Map(),
 };
 
 export const memory = memoryStore;

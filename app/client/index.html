@@ -7,24 +7,30 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>Дневник питания</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-      // Заглушка для теста в браузере без Telegram
-      window.Telegram = window.Telegram || {};
-      window.Telegram.WebApp = window.Telegram.WebApp || {
-        ready() {},
-        expand() {},
-        initData: '',
-        initDataUnsafe: { user: { id: 1, first_name: 'Тест', username: 'dev' } },
-        themeParams: {
-          bg_color: '#ffffff',
-          text_color: '#1a1a1a',
-          button_color: '#3390ec',
-          button_text_color: '#ffffff',
-        },
-        HapticFeedback: { impactOccurred() {} },
-      };
+      // Заглушка только для браузера. В Mini App имя берётся из Telegram.
+      const webApp = window.Telegram?.WebApp;
+      const inTelegram = Boolean(
+        webApp?.initData || window.TelegramWebviewProxy
+      );
+      if (!inTelegram) {
+        window.Telegram = window.Telegram || {};
+        window.Telegram.WebApp = {
+          ready() {},
+          expand() {},
+          initData: '',
+          initDataUnsafe: { user: { id: 1, first_name: 'друг', username: 'dev' } },
+          themeParams: {
+            bg_color: '#ffffff',
+            text_color: '#1a1a1a',
+            button_color: '#3390ec',
+            button_text_color: '#ffffff',
+          },
+          HapticFeedback: { impactOccurred() {} },
+        };
+      }
     </script>
-    <script async src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>
     <div id="app"></div>

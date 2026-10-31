@@ -1,6 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
 import {
-  createMeal,
   formatTodayReport,
   getChallenges,
   getDailyTip,
@@ -8,9 +7,14 @@ import {
   getReminder,
   getTodayStats,
   joinChallenge,
-  parseQuickMeal,
   setReminder,
 } from './services/data.js';
+import {
+  cancelLogDialogForUser,
+  continueLogDialog,
+  handleLogCallback,
+  startLogDialog,
+} from './services/logDialog.js';
 
 let bot = null;
 
@@ -19,7 +23,8 @@ const COMMANDS = [
   { command: 'help', description: 'Справка по командам' },
   { command: 'today', description: 'Питание за сегодня' },
   { command: 'stats', description: 'Статистика за день' },
-  { command: 'add', description: 'Быстрая запись: /add блюдо' },
+  { command: 'add', description: 'Записать еду через вопросы в чате' },
+  { command: 'cancel', description: 'Отменить запись еды' },
   { command: 'tip', description: 'Совет дня' },
   { command: 'log', description: 'Открыть логирование' },
   { command: 'guide', description: 'Справочник по питанию' },
@@ -92,10 +97,11 @@ async function handleHelp(msg) {
       `/start — главное меню\n` +
       `/today — записи за сегодня\n` +
       `/stats — сводка за день\n` +
-      `/add овсянка — быстрая запись (без калорий)\n` +
+      `/add — записать еду через вопросы в чате\n` +
+      `/cancel — отменить запись\n` +
       `/tip — совет дня\n` +
       `/remind 12:30 — напоминание\n` +
-      `/log — Mini App: голод, порции, насыщение\n` +
+      `/log — Mini App: порции и подробная запись\n` +
       `/guide — нормы порций по группам\n` +
       `/challenges — вызовы\n\n` +
       `_Дневник без калорий: голод, насыщение и порции продуктов._`,
@@ -104,31 +110,8 @@ async function handleHelp(msg) {
 }
 
 async function handleAdd(msg, match) {
-  const text = match[1]?.trim();
-  if (!text) {
-    return bot.sendMessage(
-      msg.chat.id,
-      'Пример: `/add гречка с курицей`\n\nПолная запись — в Mini App (голод, порции, насыщение).',
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  const parsed = parseQuickMeal(text);
-  if (!parsed) {
-    return bot.sendMessage(
-      msg.chat.id,
-      'Укажите название блюда: `/add суп с овощами`',
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  const meal = await createMeal(String(msg.from.id), parsed);
-  await bot.sendMessage(
-    msg.chat.id,
-    `Записано: *${meal.name}*\n_Уточните голод и порции в Mini App._`,
-    { parse_mode: 'Markdown' }
-  );
-  await sendTodayReport(msg.chat.id, msg.from.id);
+  const name = match[1]?.trim();
+  return startLogDialog(bot, msg.chat.id, msg.from.id, { name });
 }
 
 async function handleRemind(msg, match) {
@@ -191,13 +174,7 @@ async function handleCallbackQuery(query) {
     return bot.sendMessage(chatId, getDailyTip());
   }
   if (data === 'log') {
-    return bot.sendMessage(chatId, 'Откройте логирование:', {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: 'Логировать', web_app: { url: webAppUrl('log') } }],
-        ],
-      },
-    });
+    return startLogDialog(bot, chatId, userId);
   }
   if (data === 'guide') {
     return bot.sendMessage(chatId, 'Справочник:', {
@@ -224,9 +201,7 @@ async function handlePlainText(msg) {
     return bot.sendMessage(msg.chat.id, getDailyTip());
   }
   if (text === 'Записать еду') {
-    return bot.sendMessage(msg.chat.id, 'Быстрая запись: `/add блюдо`', {
-      parse_mode: 'Markdown',
-    });
+    return startLogDialog(bot, msg.chat.id, msg.from.id);
   }
   if (text === 'Открыть приложение') {
     return bot.sendMessage(msg.chat.id, 'Mini App:', {
@@ -239,10 +214,17 @@ async function handlePlainText(msg) {
   }
 }
 
+const MENU_TEXTS = ['Сегодня', 'Совет дня', 'Записать еду', 'Открыть приложение'];
+
 async function dispatchUpdate(update) {
   if (!bot) return;
 
   if (update.callback_query) {
+    const data = update.callback_query.data || '';
+    if (data.startsWith('log:')) {
+      await handleLogCallback(bot, update.callback_query);
+      return;
+    }
     await handleCallbackQuery(update.callback_query);
     return;
   }
@@ -253,27 +235,69 @@ async function dispatchUpdate(update) {
   const text = commandText(msg);
   if (!text) return;
 
-  if (text === '/start') return handleStart(msg);
-  if (text === '/help') return handleHelp(msg);
-  if (/^\/today|^\/stats/.test(text)) return sendTodayReport(msg.chat.id, msg.from.id);
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  if (text === '/cancel') {
+    return cancelLogDialogForUser(bot, chatId, userId);
+  }
+
+  if (text === '/start') {
+    await cancelLogDialogForUser(bot, chatId, userId, true);
+    return handleStart(msg);
+  }
+  if (text === '/help') {
+    await cancelLogDialogForUser(bot, chatId, userId, true);
+    return handleHelp(msg);
+  }
+  if (/^\/today|^\/stats/.test(text)) {
+    await cancelLogDialogForUser(bot, chatId, userId, true);
+    return sendTodayReport(chatId, userId);
+  }
 
   const addMatch = text.match(/^\/add(?:\s+(.+))?$/s);
   if (addMatch) return handleAdd(msg, addMatch);
 
   if (text === '/tip') {
-    return bot.sendMessage(msg.chat.id, `*Совет дня*\n\n${getDailyTip()}`, {
+    await cancelLogDialogForUser(bot, chatId, userId, true);
+    return bot.sendMessage(chatId, `*Совет дня*\n\n${getDailyTip()}`, {
       parse_mode: 'Markdown',
     });
   }
 
   const remindMatch = text.match(/^\/remind(?:\s+(\d{1,2}):(\d{2}))?$/);
-  if (remindMatch) return handleRemind(msg, remindMatch);
+  if (remindMatch) {
+    await cancelLogDialogForUser(bot, chatId, userId, true);
+    return handleRemind(msg, remindMatch);
+  }
 
-  if (text === '/log') return handleLog(msg);
-  if (text === '/guide') return handleGuide(msg);
-  if (text === '/challenges') return sendChallengesList(msg.chat.id);
+  if (text === '/log') {
+    await cancelLogDialogForUser(bot, chatId, userId, true);
+    return handleLog(msg);
+  }
+  if (text === '/guide') {
+    await cancelLogDialogForUser(bot, chatId, userId, true);
+    return handleGuide(msg);
+  }
+  if (text === '/challenges') {
+    await cancelLogDialogForUser(bot, chatId, userId, true);
+    return sendChallengesList(chatId);
+  }
 
-  if (!text.startsWith('/')) return handlePlainText(msg);
+  if (text === 'Записать еду') {
+    return startLogDialog(bot, chatId, userId);
+  }
+
+  if (MENU_TEXTS.includes(text)) {
+    await cancelLogDialogForUser(bot, chatId, userId, true);
+    return handlePlainText(msg);
+  }
+
+  if (!text.startsWith('/')) {
+    const handled = await continueLogDialog(bot, msg);
+    if (handled) return;
+    return handlePlainText(msg);
+  }
 }
 
 export function initTelegram(options = {}) {
@@ -309,35 +333,11 @@ export function initTelegram(options = {}) {
 
   bot.setMyCommands(COMMANDS).catch(() => {});
 
-  bot.onText(/\/start/, (msg) => handleStart(msg).catch(logHandlerError));
-  bot.onText(/\/help/, (msg) => handleHelp(msg).catch(logHandlerError));
-  bot.onText(/\/today|\/stats/, (msg) =>
-    sendTodayReport(msg.chat.id, msg.from.id).catch(logHandlerError)
-  );
-  bot.onText(/\/add(?:\s+(.+))?/s, (msg, match) =>
-    handleAdd(msg, match).catch(logHandlerError)
-  );
-  bot.onText(/\/tip/, (msg) =>
-    bot
-      .sendMessage(msg.chat.id, `*Совет дня*\n\n${getDailyTip()}`, {
-        parse_mode: 'Markdown',
-      })
-      .catch(logHandlerError)
-  );
-  bot.onText(/\/remind(?:\s+(\d{1,2}):(\d{2}))?/, (msg, match) =>
-    handleRemind(msg, match).catch(logHandlerError)
-  );
-  bot.onText(/\/log/, (msg) => handleLog(msg).catch(logHandlerError));
-  bot.onText(/\/guide/, (msg) => handleGuide(msg).catch(logHandlerError));
-  bot.onText(/\/challenges/, (msg) =>
-    sendChallengesList(msg.chat.id).catch(logHandlerError)
-  );
-  bot.on('callback_query', (query) =>
-    handleCallbackQuery(query).catch(logHandlerError)
-  );
   bot.on('message', (msg) => {
-    if (!msg.text || msg.text.startsWith('/')) return;
-    handlePlainText(msg).catch(logHandlerError);
+    dispatchUpdate({ message: msg }).catch(logHandlerError);
+  });
+  bot.on('callback_query', (query) => {
+    dispatchUpdate({ callback_query: query }).catch(logHandlerError);
   });
 
   return bot;
